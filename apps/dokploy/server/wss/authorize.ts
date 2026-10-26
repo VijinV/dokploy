@@ -59,9 +59,26 @@ export const canAccessDockerOverWss = async (
 	return true;
 };
 
+// Whether a stats request for `appName` targets the service named
+// `serviceAppName`. Applications and databases run as one swarm service named
+// after the app; stack tasks are namespaced "<stack>_<service>". Compose
+// container names are free-form, so the stats socket also filters compose and
+// stack containers by their project/namespace label. `appType` comes from the
+// URL, so any other value is rejected.
+export const isServiceContainerName = (
+	appName: string,
+	appType: string,
+	serviceAppName: string,
+): boolean => {
+	if (appType === "application") return appName === serviceAppName;
+	if (appType === "stack") return appName.startsWith(`${serviceAppName}_`);
+	return appType === "docker-compose";
+};
+
 // Authorizes the host/server SSH terminal opened over a WebSocket. The local
 // host terminal is a root shell on the control-plane host, so it is restricted
-// to owner/admin. A remote server terminal is gated on server access.
+// to owner/admin. A remote server terminal needs server access plus
+// server.terminal.
 export const canAccessTerminalOverWss = async (
 	user: WssUser,
 	session: WssSession,
@@ -74,7 +91,11 @@ export const canAccessTerminalOverWss = async (
 			userId: user.id,
 			activeOrganizationId: session.activeOrganizationId,
 		});
-		return accessible.has(serverId);
+		if (!accessible.has(serverId)) return false;
+
+		return await hasPermission(buildCtx(user, session.activeOrganizationId), {
+			server: ["terminal"],
+		});
 	}
 
 	try {

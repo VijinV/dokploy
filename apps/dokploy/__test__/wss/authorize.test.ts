@@ -18,6 +18,7 @@ vi.mock("@dokploy/server", () => ({
 import {
 	canAccessDockerOverWss,
 	canAccessTerminalOverWss,
+	isServiceContainerName,
 } from "@/server/wss/authorize";
 
 const USER = { id: "user-1" };
@@ -78,6 +79,42 @@ describe("canAccessDockerOverWss", () => {
 	});
 });
 
+describe("isServiceContainerName", () => {
+	it("matches an application or database only by its exact appName", () => {
+		expect(isServiceContainerName("web-abc", "application", "web-abc")).toBe(
+			true,
+		);
+		expect(isServiceContainerName("other-xyz", "application", "web-abc")).toBe(
+			false,
+		);
+		// Service access must not unlock the host-wide "dokploy" stats.
+		expect(isServiceContainerName("dokploy", "application", "web-abc")).toBe(
+			false,
+		);
+	});
+
+	it("matches stack tasks inside the service's namespace only", () => {
+		expect(
+			isServiceContainerName("stack-abc_web.1.task", "stack", "stack-abc"),
+		).toBe(true);
+		expect(
+			isServiceContainerName("stack-abcdef_web.1.task", "stack", "stack-abc"),
+		).toBe(false);
+	});
+
+	it("leaves compose containers to the project label filter", () => {
+		expect(
+			isServiceContainerName("custom-name", "docker-compose", "compose-abc"),
+		).toBe(true);
+	});
+
+	it("rejects an unknown appType", () => {
+		// The socket would apply no ownership filter for it.
+		expect(isServiceContainerName("web-abc", "invalid", "web-abc")).toBe(false);
+		expect(isServiceContainerName("web-abc", "", "web-abc")).toBe(false);
+	});
+});
+
 describe("canAccessTerminalOverWss", () => {
 	it("denies the local host terminal to a plain member", async () => {
 		mockFindMember.mockResolvedValue({ role: "member" });
@@ -95,10 +132,35 @@ describe("canAccessTerminalOverWss", () => {
 	});
 
 	it("gates a remote server terminal on server access", async () => {
+		mockHasPermission.mockResolvedValue(true);
 		mockGetAccessibleServerIds.mockResolvedValue(new Set(["srv-1"]));
 		expect(await canAccessTerminalOverWss(USER, SESSION, "srv-1")).toBe(true);
 		expect(await canAccessTerminalOverWss(USER, SESSION, "srv-2")).toBe(false);
-		// role lookup must not be needed for the remote path
+		// the remote path must never fall through to the owner/admin local branch
 		expect(mockFindMember).not.toHaveBeenCalled();
+	});
+
+	it("denies a remote server terminal without the server.terminal permission", async () => {
+		// Reaching a server (to deploy on it) must not imply a root shell on it.
+		mockGetAccessibleServerIds.mockResolvedValue(new Set(["srv-1"]));
+		mockHasPermission.mockResolvedValue(false);
+		expect(await canAccessTerminalOverWss(USER, SESSION, "srv-1")).toBe(false);
+		expect(mockHasPermission).toHaveBeenCalledWith(
+			{ user: { id: USER.id }, session: { activeOrganizationId: "org-1" } },
+			{ server: ["terminal"] },
+		);
+	});
+
+	it("allows a remote server terminal with the server.terminal permission", async () => {
+		mockGetAccessibleServerIds.mockResolvedValue(new Set(["srv-1"]));
+		mockHasPermission.mockResolvedValue(true);
+		expect(await canAccessTerminalOverWss(USER, SESSION, "srv-1")).toBe(true);
+	});
+
+	it("does not check permissions for a server the caller cannot access", async () => {
+		mockGetAccessibleServerIds.mockResolvedValue(new Set(["srv-1"]));
+		mockHasPermission.mockResolvedValue(true);
+		expect(await canAccessTerminalOverWss(USER, SESSION, "srv-2")).toBe(false);
+		expect(mockHasPermission).not.toHaveBeenCalled();
 	});
 });

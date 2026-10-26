@@ -1,6 +1,7 @@
 import type { InferResultType } from "@dokploy/server/types/with";
 import type { CreateServiceOptions, PortConfig } from "dockerode";
 import { resolveServiceNetworks } from "../../services/network";
+import { buildDokployLabels } from "../docker/dokploy-labels";
 import {
 	calculateResources,
 	generateBindMounts,
@@ -10,6 +11,7 @@ import {
 	prepareEnvironmentVariables,
 } from "../docker/utils";
 import { getRemoteDocker } from "../servers/remote-docker";
+import { withResolvedVaultRefs } from "../vault";
 
 export type LibsqlNested = InferResultType<
 	"libsql",
@@ -18,7 +20,8 @@ export type LibsqlNested = InferResultType<
 		environment: { with: { project: true } };
 	}
 >;
-export const buildLibsql = async (libsql: LibsqlNested) => {
+export const buildLibsql = async (rawLibsql: LibsqlNested) => {
+	const libsql = await withResolvedVaultRefs(rawLibsql);
 	const {
 		appName,
 		env,
@@ -96,7 +99,18 @@ export const buildLibsql = async (libsql: LibsqlNested) => {
 							Args: ["-c", finalCommand],
 						}
 					: {}),
-				Labels,
+				Labels: {
+					...Labels,
+					...buildDokployLabels({
+						organizationId: libsql.environment.project.organizationId,
+						projectId: libsql.environment.projectId,
+						projectName: libsql.environment.project.name,
+						environmentId: libsql.environmentId,
+						environmentName: libsql.environment.name,
+						applicationId: libsql.libsqlId,
+						applicationName: libsql.name,
+					}),
+				},
 			},
 			Networks: resolvedNetworks,
 			RestartPolicy,

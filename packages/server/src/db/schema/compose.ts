@@ -1,3 +1,4 @@
+import { VALID_BRANCH_REGEX } from "@dokploy/server/utils/git-branch-validation";
 import { relations } from "drizzle-orm";
 import {
 	boolean,
@@ -87,6 +88,7 @@ export const compose = pgTable("compose", {
 	),
 	command: text("command").notNull().default(""),
 	//
+	createEnvFile: boolean("createEnvFile").notNull().default(true),
 	enableSubmodules: boolean("enableSubmodules").notNull().default(false),
 	composePath: text("composePath").notNull().default("./docker-compose.yml"),
 	suffix: text("suffix").notNull().default(""),
@@ -96,6 +98,7 @@ export const compose = pgTable("compose", {
 	isolatedDeploymentsVolume: boolean("isolatedDeploymentsVolume")
 		.notNull()
 		.default(false),
+	pullImages: boolean("pullImages").notNull().default(false),
 	triggerType: triggerType("triggerType").default("push"),
 	composeStatus: applicationStatus("composeStatus").notNull().default("idle"),
 	icon: text("icon"),
@@ -169,8 +172,20 @@ export const composeRelations = relations(compose, ({ one, many }) => ({
 	patches: many(patch),
 }));
 
+const branchField = z
+	.string()
+	.min(1)
+	.regex(VALID_BRANCH_REGEX, "Invalid branch name")
+	.nullable()
+	.optional();
+
 const createSchema = createInsertSchema(compose, {
 	name: z.string().min(1),
+	branch: branchField,
+	gitlabBranch: branchField,
+	bitbucketBranch: branchField,
+	giteaBranch: branchField,
+	customGitBranch: branchField,
 	appName: z
 		.string()
 		.min(1)
@@ -183,6 +198,7 @@ const createSchema = createInsertSchema(compose, {
 	environmentId: z.string(),
 	customGitSSHKeyId: z.string().optional(),
 	command: z.string().optional(),
+	createEnvFile: z.boolean().optional(),
 	composePath: z.string().min(1),
 	composeType: z.enum(["docker-compose", "stack"]).optional(),
 	watchPaths: z.array(z.string()).optional(),
@@ -215,6 +231,7 @@ export const apiCreateCompose = createSchema.pick({
 	appName: true,
 	serverId: true,
 	composeFile: true,
+	sourceType: true,
 });
 
 export const apiCreateComposeByTemplate = createSchema
@@ -234,17 +251,19 @@ export const apiDeployCompose = z.object({
 	composeId: z.string().min(1),
 	title: z.string().optional(),
 	description: z.string().optional(),
+	freshVolumes: z.boolean().optional(),
 });
 
 export const apiRedeployCompose = z.object({
 	composeId: z.string().min(1),
 	title: z.string().optional(),
 	description: z.string().optional(),
+	freshVolumes: z.boolean().optional(),
 });
 
 export const apiDeleteCompose = z.object({
 	composeId: z.string().min(1),
-	deleteVolumes: z.boolean(),
+	deleteVolumes: z.boolean().default(false),
 });
 
 export const apiFetchServices = z.object({
@@ -266,7 +285,10 @@ export const apiSaveEnvironmentVariablesCompose = createSchema
 		composeId: true,
 		env: true,
 	})
-	.required();
+	.required()
+	.extend({
+		createEnvFile: z.boolean().optional(),
+	});
 
 export const apiRandomizeCompose = createSchema
 	.pick({

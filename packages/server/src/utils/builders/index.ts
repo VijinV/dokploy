@@ -3,6 +3,7 @@ import { findRegistryByIdWithCredentials } from "@dokploy/server/services/regist
 import type { InferResultType } from "@dokploy/server/types/with";
 import type { CreateServiceOptions } from "dockerode";
 import { getRegistryTag, uploadImageRemoteCommand } from "../cluster/upload";
+import { buildDokployLabels } from "../docker/dokploy-labels";
 import {
 	calculateResources,
 	generateBindMounts,
@@ -12,6 +13,7 @@ import {
 	prepareEnvironmentVariables,
 } from "../docker/utils";
 import { getRemoteDocker } from "../servers/remote-docker";
+import { withResolvedVaultRefs } from "../vault";
 import { getDockerCommand } from "./docker-file";
 import { getHerokuCommand } from "./heroku";
 import { getNixpacksCommand } from "./nixpacks";
@@ -38,7 +40,8 @@ export type ApplicationNested = InferResultType<
 	}
 >;
 
-export const getBuildCommand = async (application: ApplicationNested) => {
+export const getBuildCommand = async (rawApplication: ApplicationNested) => {
+	const application = await withResolvedVaultRefs(rawApplication);
 	let command = "";
 
 	if (application.sourceType !== "docker") {
@@ -77,8 +80,9 @@ export const getBuildCommand = async (application: ApplicationNested) => {
 };
 
 export const mechanizeDockerContainer = async (
-	application: ApplicationNested,
+	rawApplication: ApplicationNested,
 ) => {
+	const application = await withResolvedVaultRefs(rawApplication);
 	const {
 		appName,
 		env,
@@ -147,7 +151,18 @@ export const mechanizeDockerContainer = async (
 						Args: args,
 					}),
 				...(Ulimits && { Ulimits }),
-				Labels,
+				Labels: {
+					...Labels,
+					...buildDokployLabels({
+						organizationId: application.environment.project.organizationId,
+						projectId: application.environment.projectId,
+						projectName: application.environment.project.name,
+						environmentId: application.environmentId,
+						environmentName: application.environment.name,
+						applicationId: application.applicationId,
+						applicationName: application.name,
+					}),
+				},
 			},
 			Networks: resolvedNetworks,
 			RestartPolicy,
@@ -178,6 +193,10 @@ export const mechanizeDockerContainer = async (
 		await service.update({
 			version: Number.parseInt(inspect.Version.Index),
 			...settings,
+			// Dokploy sets no service-level labels of its own. A service update
+			// replaces the whole spec, so labels added outside Dokploy (e.g.
+			// traefik.* for the Swarm provider) are dropped unless carried over.
+			Labels: inspect.Spec?.Labels ?? {},
 			TaskTemplate: {
 				...settings.TaskTemplate,
 				ForceUpdate: inspect.Spec.TaskTemplate.ForceUpdate + 1,

@@ -210,22 +210,22 @@ export const createDeploymentPreview = async (
 	const previewDeployment = await findPreviewDeploymentById(
 		deployment.previewDeploymentId,
 	);
+	const { buildServerId } = previewDeployment.application;
+	const serverId = buildServerId || previewDeployment.application.serverId;
 	await removeLastTenDeployments(
 		deployment.previewDeploymentId,
 		"previewDeployment",
-		previewDeployment?.application?.serverId,
+		previewDeployment.application.serverId,
 	);
 	try {
 		const appName = `${previewDeployment.appName}`;
-		const { LOGS_PATH } = paths(!!previewDeployment?.application?.serverId);
+		const { LOGS_PATH } = paths(!!serverId);
 		const formattedDateTime = format(new Date(), "yyyy-MM-dd:HH:mm:ss");
 		const fileName = `${appName}-${formattedDateTime}.log`;
 		const logFilePath = path.join(LOGS_PATH, appName, fileName);
 
-		if (previewDeployment?.application?.serverId) {
-			const server = await findServerById(
-				previewDeployment?.application?.serverId,
-			);
+		if (serverId) {
+			const server = await findServerById(serverId);
 
 			const command = `
 				mkdir -p ${LOGS_PATH}/${appName};
@@ -249,6 +249,7 @@ export const createDeploymentPreview = async (
 				description: deployment.description || "",
 				previewDeploymentId: deployment.previewDeploymentId,
 				startedAt: new Date().toISOString(),
+				...(buildServerId && { buildServerId }),
 			})
 			.returning();
 		if (deploymentCreate.length === 0 || !deploymentCreate[0]) {
@@ -453,6 +454,19 @@ export const createDeploymentSchedule = async (
 		schedule.compose?.serverId ||
 		schedule.server?.serverId;
 	await removeLastTenDeployments(deployment.scheduleId, "schedule", serverId);
+	await db
+		.update(deployments)
+		.set({
+			status: "error",
+			errorMessage: "Superseded by a new run of this schedule.",
+			finishedAt: new Date().toISOString(),
+		})
+		.where(
+			and(
+				eq(deployments.scheduleId, deployment.scheduleId),
+				eq(deployments.status, "running"),
+			),
+		);
 	try {
 		const { SCHEDULES_PATH } = paths(!!serverId);
 		const formattedDateTime = format(new Date(), "yyyy-MM-dd:HH:mm:ss");
@@ -802,7 +816,7 @@ export const findAllDeploymentsByComposeId = async (composeId: string) => {
 
 const centralizedDeploymentsWith = {
 	application: {
-		columns: { applicationId: true, name: true, appName: true },
+		columns: { applicationId: true, name: true, appName: true, icon: true },
 		with: {
 			environment: {
 				columns: { environmentId: true, name: true },
@@ -821,7 +835,7 @@ const centralizedDeploymentsWith = {
 		},
 	},
 	compose: {
-		columns: { composeId: true, name: true, appName: true },
+		columns: { composeId: true, name: true, appName: true, icon: true },
 		with: {
 			environment: {
 				columns: { environmentId: true, name: true },

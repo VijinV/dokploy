@@ -54,6 +54,7 @@ export type AuditAction =
 	| "login"
 	| "logout"
 	| "restore"
+	| "download"
 	| "run"
 	| "start"
 	| "stop"
@@ -92,4 +93,8 @@ export type AuditResourceType =
 	| "mount"
 	| "application"
 	| "compose"
-	| "network";
+	| "network"
+	| "vaultProvider"
+	| "dnsProvider"
+	| "telemetryProvider"
+	| "ai";
