@@ -20,7 +20,7 @@ const {
 	listContainerDirectory,
 	normalizeContainerPath,
 	pipeContainerFileArchive,
-	readContainerFile,
+	readContainerFilePreview,
 } = await import("@dokploy/server/services/container-filesystem");
 
 const APPLICATION_CONTAINER_ID = "a".repeat(64);
@@ -491,7 +491,7 @@ describe("archive access safeguards", () => {
 			]);
 
 		await expect(
-			readContainerFile(container, "/data/current/private.txt"),
+			readContainerFilePreview(container, "/data/current/private.txt"),
 		).rejects.toMatchObject({ code: "SYMLINK_NOT_SUPPORTED" });
 
 		expect(
@@ -523,7 +523,7 @@ describe("archive access safeguards", () => {
 				);
 
 			await expect(
-				readContainerFile(container, "/data/private.txt"),
+				readContainerFilePreview(container, "/data/private.txt"),
 			).rejects.toMatchObject({ code: "ARCHIVE_UNAVAILABLE" });
 
 			expect(infoArchiveMock).toHaveBeenCalledTimes(2);

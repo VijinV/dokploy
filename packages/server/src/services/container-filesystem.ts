@@ -383,7 +383,7 @@ const inspectContainerPath = async (
 				const stat = requireArchiveStat(response);
 				const type = entryTypeFromArchiveStat(stat);
 
-				if (type === "symlink" || Boolean(stat.linkTarget)) {
+				if (type === "symlink" || stat.linkTarget) {
 					throw new ContainerFilesystemError(
 						"SYMLINK_NOT_SUPPORTED",
 						"Paths containing symlinks cannot be opened from the file browser.",
@@ -667,7 +667,7 @@ const readFirstArchiveFile = async (
 	return finished;
 };
 
-export const readContainerFile = async (
+export const readContainerFilePreview = async (
 	container: DockerContainer,
 	inputPath: string,
 ): Promise<ContainerFilePreview> => {

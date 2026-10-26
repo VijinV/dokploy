@@ -16,8 +16,8 @@ import {
 	IS_CLOUD,
 	listContainerDirectory,
 	mechanizeDockerContainer,
-	readContainerFile,
 	readConfig,
+	readContainerFilePreview,
 	readRemoteConfig,
 	removeDeployments,
 	removeDirectoryCode,
@@ -54,12 +54,12 @@ import {
 	protectedProcedure,
 	withPermission,
 } from "@/server/api/trpc";
-import { audit } from "@/server/api/utils/audit";
 import {
 	getAuthorizedApplicationFilesystem,
 	getAuthorizedApplicationFilesystemContainer,
 	toFilesystemTRPCError,
 } from "@/server/api/utils/application-filesystem";
+import { audit } from "@/server/api/utils/audit";
 import {
 	apiCreateApplication,
 	apiDeployApplication,
@@ -1280,7 +1280,7 @@ export const applicationRouter = createTRPCRouter({
 					input.applicationId,
 					input.containerId,
 				);
-				return await readContainerFile(container, input.path);
+				return await readContainerFilePreview(container, input.path);
 			} catch (error) {
 				return toFilesystemTRPCError(error);
 			}
